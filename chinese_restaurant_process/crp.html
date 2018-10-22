@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html>
+<meta charset="utf-8">
+
+<title>Dirichlet Process and Dirichlet Distribution -- Polya Restaurant Scheme and Chinese Restaurant Process</title>
+<header>
+<style type="text/css">
+body {
+height:100%;
+font-family: sans-serif;
+font-size: 10px;
+padding:0;
+margin:0;
+}
+html{
+height:100%;
+padding:0;
+margin:0;
+}
+svg {
+margin: 5px;
+}
+text {
+	font-size: 10px;
+}
+input {
+	font-size: 10px;
+width: 140px;
+}
+form {
+padding:0;
+display:inline;
+}
+img {
+display:inline;
+padding:0;
+margin:0;
+}
+a {
+text-decoration: none;
+color: #444444;
+}
+</style>
+</header>
+<body>
+<!--
+<form action="#" method="GET">
+<input name="symmetric_count" type="text" style="width: 64px" placeholder="#Categories"/>
+<input name="symmetric_param" type="text" placeholder="parameter" style="width: 64px" />
+<input type="submit" value="symmetric Dirichlet distribution" />
+</form> -->
+<!--
+<div style="margin:0 auto;width: 100%;height: 20px; background-color: #426889;background-image:url('../../images/diffusion2.svsg');background-repeat:no-repeat; background-position: center -700px;background-size: 1009px 1240px;"> 
+<a href="http://topicmodels.west.uni-koblenz.de"><img src="img/logo2.svg" style="height: 20px;float: left;padding-left: 10px; padding-top: 0px" /></a>
+</div>
+-->
+
+<div id="header" style="padding-left: 8px;padding-right: 8px;">
+</div>
+
+<div id="vis_start" style="float: left">
+<div style="text-align: center">
+<a onClick="javascript:addCustomers(1);return false;"><img src="plus1.svg" style="width: 34px;height:34px" title="add customer" alt="add customer" /></a><a onClick="javascript:addCustomers(100);return false;"><img src="plus100.svg" style="width: 34px;height:34px" title = "add 100 customers" alt="add 100 customers" /></a><a onClick="javascript:addCustomers(1000);return false;"><img src="plus1000.svg" style="width: 34px;height:34px" title = "add 1000 customers" alt="add 1000 customers" /></a>
+<br/>
+<a onClick="javascript:rewind();"><img src="Gnome-media-skip-backward.svg" style="width: 30px;height:30px" title = "restart" alt="restart" /></a>
+<a onClick="javascript:pause();"><img id="pp_icon" src="Gnome-media-playback-pause.svg" style="width: 30px;height:30px" title = "pause" alt="pause" /></a>
+<a onClick="javascript:forward();"><img id ="ff_icon" src="Gnome-media-skip-forward.svg" style="width: 30px;height:30px" title = "forward" alt="forward" /></a>
+</div>
+</div>
+
+<div id="vis">
+</div>
+
+<div style="float: right;text-align: right;position:absolute;bottom:0;right:0; padding: 6px;background-color:#ffffff;border: solid #efefef;border-width: 1px 0px 0px 1px">
+<!-- <a href="http://west.uni-koblenz.de/en/mws" target="_blank"><img src="img/WeST_Logo_Colored.svg" alt="Institute WeST"  style="height: 40px" /></a>
+<a href="http://www.gesis.org/en/home/" target="_blank"><img src="img/GESIS-Logo.svg" alt="GESIS" style="height: 40px" /></a><br/>--->
+<!-- <a href="http://www.gesis.org/en/home/" target="_blank">Part of the Topic Model Tutorial by GESIS</a> and the <a href="http://west.uni-koblenz.de/en/mws" target="_blank">Data Science lecture at the University of Koblenz-Landau</a>; -->
+<a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> by <span xmlns:cc="http://creativecommons.org/ns#" property="cc:attributionName">Christoph Carl Kling</span>
+</div>
+
+<div style="float: right;text-align: right;position:absolute;bottom:0;left:0; padding: 6px;background-color:#ffffff;border: solid #efefef;border-width: 1px 1px 0px 0px">
+
+<form action="#" method="GET">
+<input name="parameters" type="text" placeholder="parameters (comma separated)" style="width:150px" />
+<input type="submit" value="new Dirichlet distribution" style="width: 138px" />
+</form>
+
+<form action="#" method="GET">
+<input name="parameters" type="text" placeholder="parameter" style="width: 48px" />
+<input type="hidden" name="dp" value="1" />
+<input type="submit" value="new Dirichlet process" style="width: 128px" />
+</form>
+
+
+</div>
+
+<script src="./d3.v2.min.js"></script>
+<script>
+
+function $_GET(val) {
+	var result = "",
+	    tmp = [];
+	var items = location.search.substr(1).split("&");
+	for (var index = 0; index < items.length; index++) {
+		tmp = items[index].split("=");
+		if (tmp[0] === val) result = decodeURIComponent(tmp[1]);
+	}
+	return result;
+}
+
+var width = 128,
+    height = 256;
+
+var offset = -90;
+
+var seats = 20;
+var padding = 8;
+var fast = false;
+
+var size = Math.min(130/seats,10);
+
+var dp = parseInt($_GET('dp')!=''?$_GET('dp'):0);
+
+var parameters = $_GET('parameters')!=''?$_GET('parameters').split(","):[2];
+if (parameters.length == 1) {
+	dp = 1;
+}
+
+
+if (parseFloat($_GET('symmetric')) > 0) {
+	parameters = [];
+	for (i = 0; i < parseFloat($_GET('symmetric_count'));i++) {
+		parameters.push(parseFloat($_GET('symmetric_param')));
+	}
+}
+
+var ntables = parameters.length;
+
+for (i=0;i<ntables;i++) {
+	parameters[i]=parseFloat(parameters[i]);
+}
+
+var vis = d3.select("#vis");
+
+var newCustomer = -1;
+
+var customers = {};
+
+var play = true;
+
+//block other processes
+var block = false;
+
+var full = false;
+
+var radius = 13 * width / 2 / (13 + 2) - 1;
+var δy = (radius / 2) * (1 - Math.cos(Math.PI / seats));
+
+
+function pause() {
+	play = !play;
+	if (play) {
+		document.getElementById("pp_icon").setAttribute("src", "Gnome-media-playback-pause.svg");
+	}
+	else {
+		document.getElementById("pp_icon").setAttribute("src", "Gnome-media-playback-start.svg");
+	}
+}
+
+function forward() {
+	fast = !fast;	
+	if (fast) {
+		document.getElementById("ff_icon").setAttribute("src", "Gnome-media-skip-forward2.svg");
+	}
+	else {
+		document.getElementById("ff_icon").setAttribute("src", "Gnome-media-skip-forward.svg");
+	}
+}
+
+function rewind() {
+   	   location.reload()
+   	   return(false);
+}
+
+
+if (dp>0) {
+	document.getElementById("header").innerHTML = "<h1>Chinese Restaurant Process for <i>DP("+parameters[0]+",H)</i></h1> <p style=\"padding-left: 8px; padding-right: 8px;font-size:14px; text-align:justify\">Imagine a Chinese restaurant in which customers enter. A new customer sits down at a table with a probability proportional to the number of customers already sitting there. Additionally, a customer opens a new table with a probability proportional to the scaling parameter <i>a="+parameters[0]+"</i>. <span style=\"color:#444477\">This is indicated by a red pseudo-table with a fixed number of <i>"+parameters[0]+"</i> customers.</span> After infinitely many customers entered, one obtains a probability distribution over infinitely many categories, which together with samples from the base measure <i>H</i> yields a random sample of the Dirichlet process <i>DP("+parameters[0]+",H)</i>. (<i>Tables are hidden once the customers of a table can not be displayed anymore; however, every table has infinitely many seats.</i>)</p>";
+}
+else {
+	document.getElementById("header").innerHTML = "<h1>Polya Restaurant Scheme for <i>Dir("+parameters+")</i></h1> <p style=\"padding-left: 8px; padding-right: 8px;font-size:14px; text-align:justify\">Imagine a restaurant with <i>"+parameters.length+"</i> tables, in which customers enter. Every new customer sits down at a table with a probability proportional to the number of customers already sitting there. The initial number of customers at every table is given by the Dirichlet parameters, e.g. the initial number of customers at the first table is <i>"+parameters[0]+"</i>. While more and more customers enter, the probabilities for choosing a table converge and yield a random sample of the Dirichlet distribution <i>Dir("+parameters+")</i>. (<i>Tables are hidden once the customers of a table can not be displayed anymore, however; every table has infinitely many seats.</i>)</p>";
+}
+
+var yoffset = 36+32;
+
+var vis_start = d3.select("#vis_start");
+vis_start.append("svg")
+.attr("width", width+padding)
+.attr("height", height-yoffset)
+.attr("id","start");
+var select = vis_start.selectAll("#start");
+select.append("text")
+.attr("dy", height-yoffset)
+.attr("dx", width-24)
+.text("0.0");
+select.append("text")
+.attr("dy", height/2 + 16-yoffset)
+.attr("dx", width-24)
+.text("1.0");
+select.append("text")
+.attr("dy", (height + height/2 + 16) / 2 -yoffset)
+.attr("dx", width-24)
+.text("0.5");
+select.append("g")
+.attr("transform", "translate("+(width-40)+","+(((height/2 + 16 +height ) / 2) -yoffset)+")rotate(-90)")
+.append("text")
+.text("p");
+
+//1.0
+
+select
+.append("g")
+.attr("transform", "translate("+(width)+","+(height/2 + 16 -yoffset)+")")
+.append("rect")
+.attr("width",  8)
+.attr("height",  1);
+
+
+//here we 0.75
+select
+.append("g")
+.attr("transform", "translate("+(width)+","+(( ((height/2 + 16 ) + ((height/2 + 16 +height ) / 2 ))  / 2)-1 -yoffset)+")")
+.append("rect")
+.attr("width",  8)
+.attr("height",  1);
+
+//0.5
+select
+.append("g")
+.attr("transform", "translate("+(width)+","+((height/2 + 16 +height ) / 2 -1 -yoffset)+")")
+.append("rect")
+.attr("width",  8)
+.attr("height",  1);
+
+//0.25
+
+select
+.append("g")
+.attr("transform", "translate("+(width)+","+(((height/2 + 16 +height ) / 2 +height ) / 2 -1 -yoffset)+")")
+.append("rect")
+.attr("width",  8)
+.attr("height",  1);
+
+//0.0
+select
+.append("g")
+.attr("transform", "translate("+(width)+","+(height-2 -yoffset)+")")
+.append("rect")
+.attr("width",  8)
+.attr("height",  1);
+
+select.append("text")
+.attr("dy", 16)
+.attr("dx", 0)
+.text("Total customers:");
+
+select.append("text")
+.attr("dy", 16)
+.attr("dx", 86)
+.attr("id", "text_total")
+.text("0");
+
+select.append("text")
+.attr("dy", 32)
+.attr("dx", 0)
+.text("Function:");
+
+if (dp > 0) {
+	select.append("text")
+		.attr("dy", 48)
+		.attr("dx", 0)
+		.text("DirichletProcess("+parameters+",H)");
+}
+else {
+	select.append("text")
+		.attr("dy", 48)
+		.attr("dx", 0)
+		.text("Dir("+parameters+")");
+}
+
+
+for (i = 0; i < ntables; i++) { 
+	addTable(i);
+}
+
+
+
+d3.selectAll("#vis").call(updateTables);
+
+
+
+
+function addCustomers(repeat) {
+
+	if (block) {
+		return;
+	}
+	
+	block = true;
+	
+	if (play) {
+		var parsum = parameters[0];
+		var parcum = new Array(ntables);
+		parcum[0] = parameters[0];
+		for (i = 1; i < ntables; i++) {
+			parsum+=parameters[i];
+			if (i>0) {
+				parcum[i] = parcum[i-1]+parameters[i];
+			}
+		}
+
+		var randval = parsum * Math.random();
+		for (i = 0; i < ntables; i++) {
+			if (i == 0 && randval <= parcum[0]) {
+				newCustomer = 0;
+				break;
+			}
+			else {
+				if (parcum[i-1] < randval && randval < parcum[i]) {
+					newCustomer = i;
+					break;
+				}
+			}
+		}
+
+		if (dp>0) {
+
+			if (newCustomer == ntables -1) {
+				addTable(ntables);
+				parameters.push(parameters[ntables -1]);
+				parameters[newCustomer]=0;
+				ntables++;
+				
+				for (j=0;j<seats;j++) {
+					fillTable(newCustomer,j,0.0,"#000000",0);
+				}
+
+				vis.selectAll("#center"+newCustomer)
+					.attr("fill","#426889")
+					.attr("style","stroke-width: 0px");
+				vis.selectAll("#rect"+newCustomer)
+					.attr("fill","#426889");
+				vis.selectAll("#text_center"+newCustomer)
+					.text("");
+					
+				updateTables();
+
+			}
+
+		}
+
+		parameters[newCustomer]++;
+;
+		updateTables();
+
+			
+
+		if (parameters[newCustomer] > seats && !full) {
+			full = true;
+			for (i = 0; i < ntables; i++) { 
+				vis.selectAll("#table"+i)
+					.transition()
+					.duration(2000)
+					.attr("width", (width / 8))
+					.each("end","");
+				vis.selectAll("#g_customers"+i)
+					.attr("transform", "translate("+12+","+(height/2 - 16)+")rotate(-90)");
+					
+			}
+			for (i = 0; i < ntables; i++) { 
+				vis.selectAll("#number"+i)
+					.attr("dy",height/2)
+					.attr("dx",(i+1)>=10?0:4);
+
+			}
+			for (i = 0; i < ntables; i++) { 
+				for (j=0; j< seats;j++) {
+					vis.selectAll("#c"+i+"-"+j)
+					.attr("r", 0);
+				}
+			}
+		}
+		
+	if (!full) {
+		var highlight = Math.ceil(parameters[newCustomer]-1) % seats;
+		
+		vis.selectAll("#g_c"+newCustomer+"-"+highlight)
+			.attr("transform", "translate("+(size)+"," + size + ")");
+		vis.selectAll("#g_c"+newCustomer+"-"+highlight)
+					.transition()
+			.duration(500)
+			.attr("transform", function(d) {
+				var angle = ((highlight) * 360 / seats) + offset;
+				return "translate("+(width / 2 )+"," + (height/4) + ")rotate(" + angle + ")translate(" + radius + ")rotate(" + -angle + ")";
+			}).each("end","")
+			;
+
+		/*
+		vis.selectAll("#c"+newCustomer+"-"+highlight)
+			.attr("fill", "#ff3333")
+			.attr("opacity", "1.0")
+			.attr("r",size*0.9)
+			.attr("style","stroke-width: 0px;");
+		vis.selectAll("#c"+newCustomer+"-"+highlight)
+			.transition()
+			.duration(5000)
+			.attr("fill", "#000000")
+			.attr("opacity", "1.0")
+			.attr("r",size*0.9)
+			.attr("style","stroke-width: 0px;");
+			*/
+			
+			}
+		
+		
+	}
+	else {
+		repeat++;
+	}
+
+	if (repeat > 1) {
+		var fastspeed = full?20:200;
+		var speed = fast?fastspeed:Math.max(200,(Math.min(100,repeat)/Math.max(5,parsum)) * 200);
+		setTimeout(function() {
+				block = false;
+				addCustomers(repeat -1);
+				}
+				,play?speed:500);
+	}
+	else {
+		block = false;
+	}
+
+
+}
+
+function fillTable(i,j,opacity,colour,duration) {
+	if (!full) {
+	if (dp>0 && i >= (ntables-1) && opacity > 0) {
+	vis.selectAll("#c"+i+"-"+j)
+		.attr("opacity", opacity)
+		.attr("fill","#ff3333");
+	}
+	else {
+	vis.selectAll("#c"+i+"-"+j)
+		.attr("fill",colour)
+		.transition()
+		.duration(duration)
+		.attr("opacity", opacity)
+		.attr("style","stroke-width: 0px;");
+		}
+		}
+	else {
+		vis.selectAll("#c"+i+"-"+j)
+		.attr("opacity", 0);
+	}
+	}
+
+function updateTables(selection) {
+
+	var parsum = 0;
+	
+	for (i = 0; i < ntables; i++) {
+		parsum += parameters[i];
+		if (parameters[i] >= seats) {
+			for (j=0; j < seats;j++) {
+				fillTable(i,j,1.0,"#000000",250);	
+			}
+		}
+		else {
+			var j=0;
+			if (Math.ceil(parameters[i]) > parameters[i]) {
+				fillTable(i,j,parameters[i]-Math.floor(parameters[i]),"#000000",250);	
+				j++;
+			}
+
+			for (; j < Math.ceil(parameters[i]);j++) {
+				fillTable(i,j,1.0,"#000000",250);	
+			}
+		}
+	}
+	
+
+	for (i = 0; i < ntables; i++) {
+		vis.selectAll("#textc"+i)
+			.text(parameters[i]);
+		var p = parameters[i] / parsum;
+		var pstring = p + "";
+		pstring = pstring.substring(0,5);
+		vis.selectAll("#textp"+i)
+			.text(pstring);
+		vis.selectAll("#g_rect"+i)
+			.attr("transform", "translate(" + [0,height - ((height / 2) - 16) *p] +")");
+		vis.selectAll("#rect"+i)
+			.attr("height",  ((height / 2) - 16)*p);
+	}
+
+	vis_start.selectAll("#text_total")
+		.text((parsum+"").substr(0,5));
+
+
+}
+
+
+function addTable(i) {
+	if (full) {
+		vis.append("svg")
+			.attr("width", width/8)
+			.attr("height", height+padding)
+			.attr("id","table"+i);
+	}
+	else {
+		vis.append("svg")
+			.attr("width", width+padding)
+			.attr("height", height+padding)
+			.attr("id","table"+i);
+	}
+	var select = d3.select("#table"+i);
+	if (full) {
+		select.append("text")
+			.attr("id","number"+i)
+			.attr("style","font-weight:bold")
+			.attr("dy",height/2)
+			.attr("dx",(i+1)>=10?0:4)
+			.text(i+1);
+	}
+	else {
+		select.append("text")
+			.attr("id","number"+i)
+			.attr("style","font-weight:bold")
+			.attr("dy", 8)
+			.attr("dx", (i+1)>=10?0:4)
+			.text(i+1);
+	}
+	if (!full) {
+
+		select.append("g")
+			.attr("id","g_customers"+i)
+			.attr("transform", "translate("+24+","+(height-16)+")rotate(0)")
+			.append("text")
+			.attr("dy", 0)
+			.attr("dx", 0)
+			.text("Customers:");
+		vis.selectAll("#g_customers"+i)
+			.append("text")
+			.attr("dy", 0)
+			.attr("dx", 60)
+			.attr("id", "textc"+i)
+			.text(0);
+
+		select.append("text")
+			.attr("dy", height)
+			.attr("dx", 24)
+			.text("Probability:");
+		select.append("text")
+			.attr("dy", height)
+			.attr("dx", 84)
+			.attr("id", "textp"+i)
+			.text(0);
+
+		if (dp > 0) {
+			select.append("g")
+				.attr("id","g_center"+i)
+				.attr("transform", "translate(" + [width / 2, height / 2 / 2] + ")")  
+				.append("circle")
+				.attr("r",  (width / 2) * .66)
+				.attr("fill", "#ffffff")
+				.attr("stroke", "#ff3333")
+				.attr("style","stroke-width: 3px;stroke-dasharray: 10 2")
+				.attr("id","center"+i);
+			vis.selectAll("#g_center"+i)
+				.append("text")
+				.attr("id","text_center"+i)
+				.attr("dy", 3)
+				.attr("dx", -14)
+				.attr("style","font-weight:bold;font-size: 12px")
+				.attr("fill", "black")
+				.text("new");	
+		}
+		else {
+			select.append("g")
+				.attr("transform", "translate(" + [width / 2, height / 2 / 2] + ")")  
+				.append("circle")
+				.attr("r",  (width / 2) * .66)
+				.attr("fill", "#426889")
+				.attr("id","center"+i);	
+		}
+
+	}
+	else {	
+		select.append("g")
+			.attr("id","g_customers"+i)
+			.attr("transform", "translate("+12+","+(height/2 - 16)+")rotate(-90)")
+			.append("text")
+			.attr("dy", 0)
+			.attr("dx", 0)
+			.text("Customers:");
+		vis.selectAll("#g_customers"+i)
+			.append("text")
+			.attr("dy", 0)
+			.attr("dx", 60)
+			.attr("id", "textc"+i)
+			.text(0);
+	}
+	select.append("g")
+		.attr("transform","translate(0,"+(height-1)+")")
+		.append("rect")
+		.attr("width", (width / 8))
+		.attr("height", 1)
+		.attr("fill", "#426889");
+	if (dp > 0) {
+		select.append("g")
+			.attr("id","g_rect"+i)
+			.append("rect")
+			.attr("width",  (width / 8))
+			.attr("height",  (height / 2) - 16)
+			.attr("fill", "#ff3333")
+			.attr("id","rect"+i);
+	}
+	else {
+		select.append("g")
+			.attr("id","g_rect"+i)
+			.append("rect")
+			.attr("width",  (width / 8))
+			.attr("height",  (height / 2) - 16)
+			.attr("fill", "#426889")
+			.attr("id","rect"+i);
+	}
+
+
+	if (!full) {	
+
+		table = d3.selectAll("#table"+i);
+		for (j = 0; j < seats; j++) { 
+			table
+				.append("g")
+				.attr("id","g_c"+i+"-"+j)
+				.attr("transform", function(d) {
+						var angle = (j * 360 / seats) + offset;
+						return "translate("+(width / 2 )+"," + (height/4) + ")rotate(" + angle + ")translate(" + radius + ")rotate(" + -angle + ")";
+						})
+				.append("circle")
+				.attr("r", size * .9)
+				.attr("opacity", "0.0")
+				.attr("id","c"+i+"-"+j);
+				
+			
+		}
+		
+
+
+	}
+
+
+}
+
+
+
+</script>
+
+
+</body>
+</html>
+
+
+
+
+
+
