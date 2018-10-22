@@ -8,8 +8,8 @@ This repository reflects my understanding of the Sticky HDP-HMM. Note some of th
 pip install jupyterlab plotly pandas numpy seaborn pyldavis beautifulsoup4 nltk<br>
 
 **Install jupyter extension:**<br>
-<sup>This is to generate plotly graphs inline, if install hangs, downgrade to nodejs v9:<br>
-choco install nodejs.install --version 9.0.0</sup><br>
+<sup>This is to generate plotly graphs inline, if install hangs, downgrade to nodejs v9:</sup><br>
+choco install nodejs.install --version 9.0.0<br>
 jupyter labextension install @jupyterlab/plotly-extension<br>
 
 **run Jupyter Lab**<br>
