@@ -16,7 +16,7 @@ jupyter labextension install @jupyterlab/plotly-extension<br>
 jupyter-lab.exe<br>
 
 ## Docker image
-Ther docker image can be executed with: <br>
+The docker image can be executed with: <br>
 docker run -p 8888:8888 -v **\<mount dir\>**:/jup notebooks<br>
 
 example:<br>
