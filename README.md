@@ -17,7 +17,7 @@ jupyter-lab.exe<br>
 
 ## Docker image
 The docker image can be executed with: <br>
-docker run -p 8888:8888 -v **\<mount dir\>**:/jup notebooks<br>
+docker run -d -p 8888:8888 -v **\<mount dir\>**:/jup jupyterlab<br>
 
 example:<br>
-docker run -p 8888:8888 -v /home/username/projects/notebooks:/jup notebooks
+docker run -d -p 8888:8888 -v /home/username/projects/sticky_hdp-hmm:/jup jupyterlab
